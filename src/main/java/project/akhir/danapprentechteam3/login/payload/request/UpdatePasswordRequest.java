@@ -6,13 +6,11 @@ import javax.persistence.*;
 import java.util.Date;
 import java.util.UUID;
 
-@Entity
 @Data
-public class UpdatePassword {
+public class UpdatePasswordRequest {
 
-        @Id
-        @GeneratedValue(strategy = GenerationType.IDENTITY)
         private Long idReset;
+
         private String token ;
 
         private String otp ;
@@ -22,15 +20,14 @@ public class UpdatePassword {
         private Date createdDate;
 
         private String email;
+
         private String noTelepon;
 
-        @Transient
         private String newPassword;
 
-        @Transient
         private String confirmPassword;
 
-        public UpdatePassword()
+        public UpdatePasswordRequest()
         {
                 createdDate = new Date();
                 token = UUID.randomUUID().toString();

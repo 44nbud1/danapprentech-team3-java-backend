@@ -1,4 +1,4 @@
-package project.akhir.danapprentechteam3.login.security.services;
+package project.akhir.danapprentechteam3.login.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.SimpleMailMessage;

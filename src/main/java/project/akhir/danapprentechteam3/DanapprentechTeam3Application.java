@@ -13,20 +13,20 @@ import org.springframework.context.annotation.Bean;
 @SpringBootApplication
 @EnableRabbit
 public class DanapprentechTeam3Application {
-//
-//    @Bean
-//    MessageConverter jsonConverter()
-//    {
-//        return new Jackson2JsonMessageConverter();
-//    }
-//
-//    @Bean
-//    AmqpTemplate amqpTemplate(ConnectionFactory connectionFactory)
-//    {
-//        final RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
-//        rabbitTemplate.setMessageConverter(jsonConverter());
-//        return rabbitTemplate;
-//    }
+
+    @Bean
+    MessageConverter jsonConverter()
+    {
+        return new Jackson2JsonMessageConverter();
+    }
+
+    @Bean
+    AmqpTemplate amqpTemplate(ConnectionFactory connectionFactory)
+    {
+        final RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
+        rabbitTemplate.setMessageConverter(jsonConverter());
+        return rabbitTemplate;
+    }
 
     public static void main(String[] args) {
         SpringApplication.run(DanapprentechTeam3Application.class, args);

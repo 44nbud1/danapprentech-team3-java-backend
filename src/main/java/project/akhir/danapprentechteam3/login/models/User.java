@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import project.akhir.danapprentechteam3.transaksi.model.CustomerChoice;
+import project.akhir.danapprentechteam3.transaksi.model.Transaksi;
 
 import javax.persistence.*;
 import javax.validation.constraints.NotBlank;
@@ -14,7 +16,7 @@ import java.util.Set;
 
 @Data
 @AllArgsConstructor
-@NoArgsConstructor
+//@NoArgsConstructor
 @Entity
 @Table(	name = "users")
 
@@ -22,6 +24,7 @@ import java.util.Set;
 public class User {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	@Column(name = "id_user")
 	private Long id;
 	@NotBlank
 	@Size(max = 15)
@@ -67,5 +70,12 @@ public class User {
 
 	@Temporal(TemporalType.TIMESTAMP)
 	private Date updatedDate = new Date();
+
+	@OneToMany(mappedBy = "users", fetch = FetchType.LAZY,
+			cascade = CascadeType.ALL)
+	private Set<CustomerChoice> transaksis;
+
+	public User() {
+	}
 
 }

@@ -1,8 +1,10 @@
-package project.akhir.danapprentechteam3.login.payload.request;
+package project.akhir.danapprentechteam3.login.models;
 
 import lombok.Data;
 
 import javax.persistence.*;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
 
 
 @Data
@@ -11,8 +13,9 @@ import javax.persistence.*;
 public class EmailToken {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long idEmailOtp;
+    @NotBlank
+    @NotNull
+    @Column(length = 200)
     private String codeVerify;
     private String email;
     private String mobileNumber;

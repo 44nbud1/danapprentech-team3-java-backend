@@ -12,7 +12,8 @@ public class ServiceTransaksiImpl  implements ServiceTransaksi
     private ServiceTransaksi serviceTransaksi;
 
     @Override
-    public Transaksi saveTransaksi(Transaksi transaksi) {
+    public Transaksi saveTransaksi(Transaksi transaksi)
+    {
         return serviceTransaksi.saveTransaksi(transaksi);
     }
 

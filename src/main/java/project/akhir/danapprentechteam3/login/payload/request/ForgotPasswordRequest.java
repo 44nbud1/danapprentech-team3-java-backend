@@ -6,12 +6,9 @@ import javax.persistence.*;
 import java.util.Date;
 import java.util.UUID;
 
-@Entity
 @Data
-public class ForgotPassword<U, L extends Number> {
+public class ForgotPasswordRequest<U, L extends Number> {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_reset")
     private Long idReset;
     @Column(name = "token_reset_password")
@@ -34,7 +31,7 @@ public class ForgotPassword<U, L extends Number> {
     @Transient
     private String confirmPassword;
 
-    public ForgotPassword()
+    public ForgotPasswordRequest()
     {
         createdDate = new Date();
         token = UUID.randomUUID().toString();

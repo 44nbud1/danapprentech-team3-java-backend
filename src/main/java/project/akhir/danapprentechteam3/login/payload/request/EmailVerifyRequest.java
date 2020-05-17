@@ -7,11 +7,9 @@ import java.util.Date;
 import java.util.UUID;
 
 @Data
-@Entity
-public class EmailVerification
+public class EmailVerifyRequest
 {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+
     @Column(name = "token_id")
     private Long id;
 
@@ -21,7 +19,7 @@ public class EmailVerification
     private Date createdDate;
     private boolean statusEmail = false;
 
-    public EmailVerification()
+    public EmailVerifyRequest()
     {
         statusEmail = true;
         createdDate = new Date();

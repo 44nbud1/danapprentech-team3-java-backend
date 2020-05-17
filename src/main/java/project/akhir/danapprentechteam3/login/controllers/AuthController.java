@@ -12,21 +12,25 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import project.akhir.danapprentechteam3.login.models.EmailToken;
+import project.akhir.danapprentechteam3.login.models.SmsOtp;
 import project.akhir.danapprentechteam3.login.models.User;
 import project.akhir.danapprentechteam3.login.payload.request.*;
+import project.akhir.danapprentechteam3.login.rabbitmq.rabbitconsumer.RabbitMqConsumer;
+import project.akhir.danapprentechteam3.login.rabbitmq.rabbitproducer.RabbitMqProducer;
 import project.akhir.danapprentechteam3.login.repository.*;
 import project.akhir.danapprentechteam3.login.payload.response.JwtResponse;
 import project.akhir.danapprentechteam3.login.payload.response.MessageResponse;
-//import project.akhir.danapprentechteam3.rabbitmq.rabbitconsumer.RabbitMqConsumer;
-//import project.akhir.danapprentechteam3.rabbitmq.rabbitproducer.RabbitMqProducer;
 import project.akhir.danapprentechteam3.login.readdata.service.ProviderValidation;
 //import project.akhir.danapprentechteam3.repository.*;
 import project.akhir.danapprentechteam3.login.security.jwt.AuthEntryPointJwt;
 import project.akhir.danapprentechteam3.login.security.jwt.JwtUtils;
-import project.akhir.danapprentechteam3.login.security.passwordvalidation.PasswordAndEmailVal;
-import project.akhir.danapprentechteam3.login.security.services.EmailSenderService;
-import project.akhir.danapprentechteam3.login.security.services.SmsOtpServiceImpl;
+import project.akhir.danapprentechteam3.login.security.passwordvalidation.PasswordAndEmailValImpl;
+import project.akhir.danapprentechteam3.login.service.EmailSenderService;
 import project.akhir.danapprentechteam3.login.security.services.UserDetailsImpl;
+import project.akhir.danapprentechteam3.login.service.EmailVerifyService;
+import project.akhir.danapprentechteam3.login.service.SmsOtpService;
+import project.akhir.danapprentechteam3.login.service.UserService;
 import project.akhir.danapprentechteam3.transaksi.model.Transaksi;
 import project.akhir.danapprentechteam3.transaksi.repository.TransaksiRepository;
 
@@ -44,8 +48,6 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 
 	private static final Logger logger = LoggerFactory.getLogger(AuthEntryPointJwt.class);
 
-	private String plainPassword = null;
-
 	// for payload
 	String noTelepon;
 	String email;
@@ -54,27 +56,11 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 	String password ;
 	Long pinTransaksi ;
 
-	// otpVerify
-	boolean statusVerifyOtp = false;
-
-	// emailVerify
-	boolean statusVerifyEmail = false;
-
-	//token forgot password
-	boolean statusTokenForgotPassword = false;
-
-	Long count =0L;
-
-	Long countForgotPassword = 0L;
-
 	@Autowired
-	PasswordAndEmailVal passwordEmailVal;
+	PasswordAndEmailValImpl passwordEmailVal;
 
 	@Autowired
     AuthenticationManager authenticationManager;
-
-	@Autowired
-	UserRepository userRepository;
 
 	@Autowired
     PasswordEncoder encoder;
@@ -86,42 +72,44 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 	ProviderValidation providerValidation;
 
 	@Autowired
-	EmailVerify emailVerify;
-//	@Autowired
-//	RabbitMqConsumer rabbitMqCustomer;
+	EmailVerifyService emailVerifyService;
 
-//	@Autowired/
-//	RabbitMqProducer rabbitMqProducer;
+	@Autowired
+	RabbitMqConsumer rabbitMqCustomer;
+
+	@Autowired
+	RabbitMqProducer rabbitMqProducer;
 
 	@Autowired
 	EmailSenderService emailSenderService;
 
 	@Autowired
-	ConfirmationTokenRepository confirmationTokenRepository;
-
-	@Autowired
-	ForgotPasswordRepository forgotPasswordRepository;
-
-	@Autowired
-	SmsOtpServiceImpl smsOtpService;
-
-	@Autowired
-	SmsOtpRepository smsOtpRepository;
+	SmsOtpService smsOtpService;
 
 	@Autowired
 	TransaksiRepository transaksiRepository;
 
+	@Autowired
+	UserService userService;
+
 	//Queue
 	private static final String signupKey = "signupKey";
+
+	/*
+	--------------------------------------------------------------------------------------------------------------------
+	 */
 
 	@PostMapping("/signin")
 	public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
 
 		//send to rabbi
-//		rabbitMqProducer.loginSendRabbit(loginRequest);
-		User cekUser = userRepository.findByNoTelepon(loginRequest.getNoTelepon());
+		rabbitMqProducer.loginSendRabbit(loginRequest);
+
 		//take from rabbit
 //		LoginRequest login = rabbitMqCustomer.loginRequest(loginRequest);
+
+		User cekUser = userService.findByNoTelepon(loginRequest.getNoTelepon());
+
 		if (cekUser == null)
 		{
 			return ResponseEntity.badRequest().body((new MessageResponse("ERROR : \n" +
@@ -135,9 +123,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 					"400")));
 		}
 
-		User user = userRepository.findByNoTelepon(loginRequest.getNoTelepon());
-
-		plainPassword = loginRequest.getPassword();
+		User user = userService.findByNoTelepon(loginRequest.getNoTelepon());
 
 		Authentication authentication = authenticationManager.authenticate(
 				new UsernamePasswordAuthenticationToken(loginRequest.getNoTelepon(), loginRequest.getPassword()));
@@ -151,7 +137,8 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 				.collect(Collectors.toList());
 
 		user.setTokenAkses(token);
-		userRepository.save(user);
+		userService.save(user);
+
 		JwtResponse jwtResponse = new JwtResponse();
 		jwtResponse.setSaldo(user.getSaldo());
 		jwtResponse.setToken(token);
@@ -161,23 +148,25 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 		jwtResponse.setStatus("200");
 		jwtResponse.setMessage("successfully");
 		return ResponseEntity.ok((jwtResponse));
+
 	}
 
-	// to save mobile number and code Otp
-
+	/*
+        --------------------------------------------------------------------------------------------------------------------
+    */
 
 	@PostMapping("/signup")
 	public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest signUpRequest) throws IOException, TimeoutException {
 
 		// send data to rabbit mq
-//		rabbitMqProducer.signupSendRabbit(signUpRequest);
+		rabbitMqProducer.signupSendRabbit(signUpRequest);
 		logger.info("Send data to rabbit Mq");
 
 		// take data from rabbit mq
-//		SignupRequest signup = rabbitMqCustomer.recievedMessage(signUpRequest);
+		SignupRequest signup = rabbitMqCustomer.recievedMessage(signUpRequest);
 
 		logger.info("take data from rabbit mq");
-//
+
 //		if (!providerValidation.validasiProvider(signup.getNoTelepon()))
 //		{
 //			logger.info("ERROR : Username is not registered with the service provider!");
@@ -187,7 +176,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 //							"400"));
 //		}
 
-		if (userRepository.existsByNoTelepon(signUpRequest.getNoTelepon())) {
+		if (userService.existsByNoTelepon(signup.getNoTelepon())) {
 			logger.info("ERROR : Username is already taken!");
 			return ResponseEntity
 					.badRequest()
@@ -195,8 +184,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-
-		if (!passwordEmailVal.PasswordValidatorSpace(signUpRequest.getPassword())) {
+		if (!passwordEmailVal.PasswordValidatorSpace(signup.getPassword())) {
 			logger.info("ERROR : Your password does not must contains white space...");
 			return ResponseEntity
 					.badRequest()
@@ -204,7 +192,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.PasswordValidatorLowercase(signUpRequest.getPassword()))
+		if (!passwordEmailVal.PasswordValidatorLowercase(signup.getPassword()))
 		{
 			logger.info("ERROR : Your password must contains one lowercase characters...");
 			return ResponseEntity
@@ -213,7 +201,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.PasswordValidatorUpercase(signUpRequest.getPassword()))
+		if (!passwordEmailVal.PasswordValidatorUpercase(signup.getPassword()))
 		{
 			logger.info("ERROR : Your password must contains one uppercase characters...");
 			return ResponseEntity
@@ -222,7 +210,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.PasswordValidatorSymbol(signUpRequest.getPassword()))
+		if (!passwordEmailVal.PasswordValidatorSymbol(signup.getPassword()))
 		{
 			logger.info("ERROR : Your password must contains one symbol characters...");
 			return ResponseEntity
@@ -231,7 +219,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.PasswordValidatorNumber(signUpRequest.getPassword()))
+		if (!passwordEmailVal.PasswordValidatorNumber(signup.getPassword()))
 		{
 			logger.info("ERROR : Your password must contains one digit from 0-9...");
 			return ResponseEntity
@@ -240,7 +228,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.EmailValidator(signUpRequest.getEmail()))
+		if (!passwordEmailVal.EmailValidator(signup.getEmail()))
 		{
 			logger.info("ERROR : Your email address is invalid....");
 			return ResponseEntity
@@ -249,7 +237,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (userRepository.existsByEmail(signUpRequest.getEmail()))
+		if (userService.existsByEmail(signup.getEmail()))
 		{
 			logger.info("ERROR : Email is already in use!");
 			return ResponseEntity
@@ -258,7 +246,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.confirmPassword(signUpRequest.getPassword(),signUpRequest.getConfirmPassword()))
+		if (!passwordEmailVal.confirmPassword(signup.getPassword(),signup.getConfirmPassword()))
 		{
 			logger.info("ERROR : Please check your password not Match!");
 			return ResponseEntity
@@ -267,7 +255,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.LengthPhoneNumber(signUpRequest.getNoTelepon()))
+		if (!passwordEmailVal.LengthPhoneNumber(signup.getNoTelepon()))
 		{
 			logger.info("ERROR : Length phone number must be less than 15 ...");
 			return ResponseEntity
@@ -276,7 +264,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.LengthUsername(signUpRequest.getNamaUser()))
+		if (!passwordEmailVal.LengthUsername(signup.getNamaUser()))
 		{
 			logger.info("ERROR : Length nama user must be more than equal 3 character...");
 			return ResponseEntity
@@ -285,7 +273,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.NumberOnlyValidator(signUpRequest.getNoTelepon()))
+		if (!passwordEmailVal.NumberOnlyValidator(signup.getNoTelepon()))
 		{
 			logger.info("ERROR : Your phone number must be all numeric...");
 			return ResponseEntity
@@ -294,7 +282,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.Alphabetic(signUpRequest.getNamaUser()))
+		if (!passwordEmailVal.Alphabetic(signup.getNamaUser()))
 		{
 			logger.info("ERROR : Your phone number must be all Alphabetic...");
 			return ResponseEntity
@@ -304,7 +292,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 		}
 		//LengthandNumeric
 
-		if (!passwordEmailVal.LengthandNumeric(signUpRequest.getPinTransaksi()))
+		if (!passwordEmailVal.LengthandNumeric(signup.getPinTransaksi()))
 		{
 			logger.info("ERROR : Your phone number must be all Alphabetic...");
 			return ResponseEntity
@@ -313,7 +301,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.LengthPin(signUpRequest.getPinTransaksi()))
+		if (!passwordEmailVal.LengthPin(signup.getPinTransaksi()))
 		{
 			logger.info("ERROR : Your phone number must be all Alphabetic...");
 			return ResponseEntity
@@ -322,7 +310,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (!passwordEmailVal.LengthPassword(signUpRequest.getPassword()))
+		if (!passwordEmailVal.LengthPassword(signup.getPassword()))
 		{
 			logger.info("ERROR : Your password must be more than 7 and less than 17...");
 			return ResponseEntity
@@ -331,74 +319,89 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 							"400"));
 		}
 
-		if (emailVerify.existsByEmail(signUpRequest.getEmail()) && emailVerify.existsByMobileNumber(signUpRequest.getNoTelepon()))
+		if (emailVerifyService.existsByEmail(signup.getEmail()))
 		{
-			emailVerify.deleteByMobileNumber(signUpRequest.getNoTelepon());
+			emailVerifyService.deleteByMobileNumber(signup.getNoTelepon());
 		}
 
-		if (smsOtpRepository.existsByEmail(signUpRequest.getEmail()) && smsOtpRepository.existsByMobileNumber(signUpRequest.getNoTelepon()))
+		if (smsOtpService.existsByEmail(signup.getEmail()))
 		{
-			smsOtpRepository.deleteByMobileNumber(signUpRequest.getNoTelepon());
+			smsOtpService.deleteByMobileNumber(signup.getNoTelepon());
+		}
+
+		if (emailVerifyService.existsByMobileNumber
+				(signup.getNoTelepon()))
+		{
+			emailVerifyService.deleteByMobileNumber(signup.getNoTelepon());
+		}
+
+		if (smsOtpService.existsByMobileNumber
+				(signup.getNoTelepon()))
+		{
+			smsOtpService.deleteByMobileNumber(signup.getNoTelepon());
 		}
 
 		//parse +62 -> 08
-		String va = signUpRequest.getNoTelepon().substring(3,signUpRequest.getNoTelepon().length());
+		String va = signup.getNoTelepon().substring(3,signUpRequest.getNoTelepon().length());
 		// Create new user's account and encode password
 		User user = new User();
-		user.setNoTelepon(signUpRequest.getNoTelepon());
-		user.setEmail(signUpRequest.getEmail());
-		user.setPinTransaksi(signUpRequest.getPinTransaksi());
+		user.setNoTelepon(signup.getNoTelepon());
+		user.setEmail(signup.getEmail());
+		user.setPinTransaksi(signup.getPinTransaksi());
 		user.setVirtualAccount("80000"+va);
-		user.setNamaUser(signUpRequest.getNamaUser());
-		user.setPassword(encoder.encode(signUpRequest.getPassword()));
+		user.setNamaUser(signup.getNamaUser());
+		user.setPassword(encoder.encode(signup.getPassword()));
 		user.setStatus("200");
 		user.setMessage("signup is successfully");
 
-		noTelepon = signUpRequest.getNoTelepon();
-		email = signUpRequest.getEmail();
+		noTelepon = signup.getNoTelepon();
+		email = signup.getEmail();
 		VirtualAccount = "80000"+va;
-		namaUser = signUpRequest.getNamaUser();
-		password = encoder.encode(signUpRequest.getPassword());
-		pinTransaksi = signUpRequest.getPinTransaksi();
-		//if false detele token if ever ask verify
-//		confirmationTokenRepository.deleteByConfirmationToken(token);
+		namaUser = signup.getNamaUser();
+		password = encoder.encode(signup.getPassword());
+		pinTransaksi = signup.getPinTransaksi();
 
 		// number verify
 		SmsOtp otp = new SmsOtp();
-		otp.setMobileNumber(signUpRequest.getNoTelepon());
-//		otp.setMobileNumber("+6285777488828");// dummy
+		otp.setMobileNumber(signup.getNoTelepon());
 		otp.setCodeOtp(smsOtpService.createOtp());
-//		otp.setCodeOtp("0657"); // dummy
 		otp.setStatusOtp(true);
-		otp.setEmail(signUpRequest.getEmail());
-		smsOtpRepository.save(otp);
+		otp.setEmail(signup.getEmail());
 
 		// email verify
 		EmailToken emailToken = new EmailToken();
-		emailToken.setEmail(signUpRequest.getEmail());
+		emailToken.setEmail(signup.getEmail());
 		emailToken.setCodeVerify(UUID.randomUUID().toString());
 		emailToken.setStatusEmailVerify(true);
-		emailToken.setMobileNumber(signUpRequest.getNoTelepon());
-		emailVerify.save(emailToken);
+		emailToken.setMobileNumber(signup.getNoTelepon());
 
 		// email verify
 		SimpleMailMessage mailMessage = new SimpleMailMessage();
-		mailMessage.setTo(signUpRequest.getEmail());
+		mailMessage.setTo(signup.getEmail());
 		mailMessage.setSubject("Test test");
 		mailMessage.setFrom("setiawan.aanbudi@gmail.com");
 		mailMessage.setText("To confirm "+"https://project-danapprentech-3.herokuapp.com/api/auth/confirmation-account/"+
 				emailToken.getCodeVerify());
 		emailSenderService.sendEmail(mailMessage);
 
+		smsOtpService.save(otp);
+		emailVerifyService.save(emailToken);
+
 //		smsOtpService.sendSMS(signUpRequest.getNoTelepon(), otp.getCodeOtp());
 
-		return ResponseEntity.ok(new MessageResponse(signUpRequest.getNoTelepon() +" ---- "+otp.getCodeOtp()+ " your otp "+otp.getCodeOtp(),"200"));
+		return ResponseEntity.ok(new MessageResponse("Please Check your email or phone number"+otp.getCodeOtp()+
+				" your otp "+otp.getCodeOtp(),"200"));
 	}
 
-	@PostMapping("/signout")
-	public ResponseEntity<?> logoutUser(@Valid @RequestBody LoginRequest loginRequest) {
+	/*
+	-------------------------------------------------------------------------------------------------------------------
+	 */
 
-		User us = userRepository.findByNoTelepon(loginRequest.getNoTelepon());
+	@PostMapping("/signout")
+	public ResponseEntity<?> logoutUser(@Valid @RequestBody LoginRequest loginRequest)
+	{
+
+		User us = userService.findByNoTelepon(loginRequest.getNoTelepon());
 
 		UsernamePasswordAuthenticationToken authRequest = new UsernamePasswordAuthenticationToken(
 				loginRequest.getNoTelepon(), loginRequest.getPassword());
@@ -412,7 +415,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 			UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
 
 			us.setTokenAkses(null);
-			userRepository.save(us);
+			userService.save(us);
 			JwtResponse jwtResponse = new JwtResponse();
 			jwtResponse.setToken(null);
 			jwtResponse.setEmail(userDetails.getEmail());
@@ -434,8 +437,8 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 	@GetMapping("/confirmation-account/{token}")
 	public ResponseEntity<?> confirmationUserAccount(@PathVariable("token")String token)
 	{
-		EmailToken emailToken = emailVerify.findByCodeVerify(token);
-		SmsOtp smsOtp = smsOtpRepository.findByEmail(emailToken.getEmail());
+		EmailToken emailToken = emailVerifyService.findByCodeVerify(token);
+		SmsOtp smsOtp = smsOtpService.findByEmail(emailToken.getEmail());
 
 		if (emailToken == null)
 		{
@@ -460,9 +463,9 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 			emailToken.setStatusEmailVerify(Boolean.FALSE);
 			smsOtp.setStatusOtp(Boolean.FALSE);
 
-			smsOtpRepository.save(smsOtp);
-			emailVerify.save(emailToken);
-			return ResponseEntity.ok(userRepository.save(user));
+			smsOtpService.save(smsOtp);
+			emailVerifyService.save(emailToken);
+			return ResponseEntity.ok(userService.save(user));
 
 		} else
 		{
@@ -476,19 +479,27 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 
 	@PostMapping("/confirmation-otp/{mobileNumber}/otp")
 	public ResponseEntity<?> verifyOtp (@PathVariable ("mobileNumber") String mobileNumber, @RequestBody SmsOtp smsOtp) {
-		SmsOtp otpNumber = smsOtpRepository.findByMobileNumber(mobileNumber);
-		EmailToken emailToken = emailVerify.findByMobileNumber(mobileNumber);
+		SmsOtp otpNumber = smsOtpService.findByMobileNumber(mobileNumber);
+		EmailToken emailToken = emailVerifyService.findByMobileNumber(mobileNumber);
 
 		if (mobileNumber == null) {
-			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Your phone number wrong..", "400"));
+			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Your phone number wrong..",
+					"400"));
+		}
+
+		if (smsOtp.getCodeOtp() == null) {
+			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Please fill otp..",
+					"400"));
 		}
 
 		if (!(otpNumber.getCodeOtp().equalsIgnoreCase(smsOtp.getCodeOtp()))) {
-			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Your otp wrong please try aggin..", "400"));
+			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Your otp wrong please " +
+					"try aggin..", "400"));
 		}
 
 		if (smsOtp.getCodeOtp().length() != 4) {
-			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Your otp length must be 4..", "400"));
+			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Your otp length must be 4..",
+					"400"));
 		}
 
 		if (otpNumber == null) {
@@ -500,7 +511,8 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 		}
 
 		if (smsOtp.getCodeOtp() == null || smsOtp.getCodeOtp().trim().length() <= 0) {
-			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Please provide otp", "400"));
+			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Please provide otp",
+					"400"));
 		}
 
 		if (smsOtp.getCodeOtp().equalsIgnoreCase("0000"))
@@ -539,12 +551,12 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 			otpNumber.setStatusOtp(Boolean.FALSE);
 			emailToken.setStatusEmailVerify(Boolean.FALSE);
 
-			smsOtpRepository.save(otpNumber);
-			emailVerify.save(emailToken);
+			smsOtpService.save(otpNumber);
+			emailVerifyService.save(emailToken);
 
 			user.setTokenAkses(null);
 
-			return ResponseEntity.ok(userRepository.save(user));
+			return ResponseEntity.ok(userService.save(user));
 	} else {
 		return ResponseEntity.badRequest().body(new MessageResponse(
 				"ERROR : Your otp wrong please try aggin..","400"));
@@ -557,10 +569,10 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 
 	//Lupa password
 	@PostMapping("/forgot-password")
-	public ResponseEntity<?> forgotPassword(@RequestBody ForgotPassword forgotPassword) {
-		User user = userRepository.findByEmail(forgotPassword.getEmail());
-		EmailToken emailToken = emailVerify.findByEmail(forgotPassword.getEmail());
-		SmsOtp smsOtp = smsOtpRepository.findByMobileNumber(forgotPassword.getNoTelepon());
+	public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest forgotPasswordRequest) {
+		User user = userService.findByEmail(forgotPasswordRequest.getEmail());
+		EmailToken emailToken = emailVerifyService.findByEmail(forgotPasswordRequest.getEmail());
+		SmsOtp smsOtp = smsOtpService.findByMobileNumber(forgotPasswordRequest.getNoTelepon());
 
 //		if (emailVerify.existsByEmail(forgotPassword.getEmail()) && emailVerify.existsByMobileNumber
 //				(forgotPassword.getNoTelepon()))
@@ -576,28 +588,28 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 //			smsOtpRepository.deleteByMobileNumber(forgotPassword.getNoTelepon());
 //		}
 
-		if (!emailVerify.existsByEmail(forgotPassword.getEmail()))
+		if (!emailVerifyService.existsByEmail(forgotPasswordRequest.getEmail()))
 		{
 			return ResponseEntity.badRequest().body(new MessageResponse("Email not registered...!", "400"));
 		}
 
-		if (!smsOtpRepository.existsByMobileNumber(forgotPassword.getNoTelepon()))
+		if (!smsOtpService.existsByMobileNumber(forgotPasswordRequest.getNoTelepon()))
 		{
 			return ResponseEntity.badRequest().body(new MessageResponse("Phone number not registered...!", "400"));
 		}
-			ForgotPassword forgotPasswords = new ForgotPassword();
-			forgotPasswords.setEmail(forgotPassword.getEmail());
+			ForgotPasswordRequest forgotPasswordsRequest = new ForgotPasswordRequest();
+			forgotPasswordsRequest.setEmail(forgotPasswordRequest.getEmail());
 
 			emailToken.setStatusEmailVerify(true);
 
 			// email verify
 			emailToken.setCodeVerify(UUID.randomUUID().toString());
 			emailToken.setStatusEmailVerify(true);
-			emailVerify.save(emailToken);
+			emailVerifyService.save(emailToken);
 
 			// email verify
 			SimpleMailMessage mailMessage = new SimpleMailMessage();
-			mailMessage.setTo(forgotPassword.getEmail());
+			mailMessage.setTo(forgotPasswordRequest.getEmail());
 			mailMessage.setSubject("Test test");
 			mailMessage.setFrom("setiawan.aanbudi@gmail.com");
 			mailMessage.setText("To confirm "+"https://project-danapprentech-3.herokuapp.com/api/auth/confirm-password/"+
@@ -605,15 +617,15 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 			emailSenderService.sendEmail(mailMessage);
 
 			// number verify
-			SmsOtp otp = smsOtpRepository.findByMobileNumber(forgotPassword.getNoTelepon());
-			otp.setMobileNumber(forgotPassword.getNoTelepon());
+			SmsOtp otp = smsOtpService.findByMobileNumber(forgotPasswordRequest.getNoTelepon());
+			otp.setMobileNumber(forgotPasswordRequest.getNoTelepon());
 //		otp.setMobileNumber("+6285777488828");// dummy
 			otp.setCodeOtp(smsOtpService.createOtp());
 //		otp.setCodeOtp("0657"); // dummy
 			otp.setStatusOtp(true);
-			otp.setEmail(forgotPassword.getEmail());
+			otp.setEmail(forgotPasswordRequest.getEmail());
 
-			smsOtpRepository.save(otp);
+			smsOtpService.save(otp);
 //			smsOtpService.sendSMS(forgotPassword.getNoTelepon(), otp.getCodeOtp());
 			return ResponseEntity.ok(new MessageResponse("your otp " + otp.getCodeOtp(), "200"));
 
@@ -622,25 +634,25 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 	@GetMapping("confirm-password/{token}")
 	public ResponseEntity<?> confirmResetPassword(@PathVariable("token") String token)
 	{
-		EmailToken emailToken = emailVerify.findByCodeVerify(token);
+		EmailToken emailToken = emailVerifyService.findByCodeVerify(token);
 		emailToken.setStatusEmailVerify(true);
-		emailVerify.save(emailToken);
+		emailVerifyService.save(emailToken);
 		return ResponseEntity.ok(new MessageResponse("Your token has been reset...","200"));
 	}
 
 	// forgot password confirmation by otp
 	@PutMapping("/confirmation-forgotPassword/{mobileNumber}/otp")
-	public ResponseEntity<?> sendOtp (@PathVariable ("mobileNumber") String mobileNumber,@RequestBody ForgotPassword forgotPassword) throws IOException
+	public ResponseEntity<?> sendOtp (@PathVariable ("mobileNumber") String mobileNumber,@RequestBody ForgotPasswordRequest forgotPasswordRequest) throws IOException
 	{
-		SmsOtp smsotps = smsOtpRepository.findByMobileNumber(mobileNumber);
-		EmailToken emailToken = emailVerify.findByMobileNumber(mobileNumber);
+		SmsOtp smsotps = smsOtpService.findByMobileNumber(mobileNumber);
+		EmailToken emailToken = emailVerifyService.findByMobileNumber(mobileNumber);
 
-		if (!forgotPassword.getNewPassword().equals(forgotPassword.getConfirmPassword()))
+		if (!forgotPasswordRequest.getNewPassword().equals(forgotPasswordRequest.getConfirmPassword()))
 		{
 			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : ERROR : Your Password doesnt match..","400"));
 		}
 
-		if (forgotPassword.getOtp() == null || forgotPassword.getOtp().trim().length() <= 0)
+		if (forgotPasswordRequest.getOtp() == null || forgotPasswordRequest.getOtp().trim().length() <= 0)
 		{
 			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Please provide otp","400"));
 		}
@@ -650,7 +662,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Otp Expired", "400"));
 		}
 
-		if (forgotPassword.getOtp().length() != 4)
+		if (forgotPasswordRequest.getOtp().length() != 4)
 		{
 			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Your otp length must be 4..","400"));
 		}
@@ -668,19 +680,19 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 		if (emailToken.isStatusEmailVerify() && smsotps.isStatusOtp())
 		{
 
-			User user = userRepository.findByNoTelepon(mobileNumber);
-			user.setPassword(encoder.encode(forgotPassword.getNewPassword()));
+			User user = userService.findByNoTelepon(mobileNumber);
+			user.setPassword(encoder.encode(forgotPasswordRequest.getNewPassword()));
 			user.setStatus("200");
 			user.setMessage("Password Already updated");
 			user.setUpdatedDate(new Date());
 			user.setPinTransaksi(user.getPinTransaksi());
 			smsotps.setStatusOtp(false);
 			emailToken.setStatusEmailVerify(false);
-			emailVerify.save(emailToken);
-			smsOtpRepository.save(smsotps);
+			emailVerifyService.save(emailToken);
+			smsOtpService.save(smsotps);
 			//save to database
-			userRepository.save(user);
-			return ResponseEntity.ok(userRepository.save(user));
+			userService.save(user);
+			return ResponseEntity.ok(userService.save(user));
 		} else {
 			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : The Otp is invalid or broken","400"));
 		}
@@ -692,42 +704,42 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 	 */
 
 	@PostMapping("/reset-password-inapplication")
-	public ResponseEntity<?> updatePassword (@RequestBody ForgotPassword forgotPassword)
+	public ResponseEntity<?> updatePassword (@RequestBody ForgotPasswordRequest forgotPasswordRequest)
 	{
-		EmailToken emailToken = emailVerify.findByEmail(forgotPassword.getEmail());
-		SmsOtp smsOtp = smsOtpRepository.findByMobileNumber(forgotPassword.getNoTelepon());
+		EmailToken emailToken = emailVerifyService.findByEmail(forgotPasswordRequest.getEmail());
+		SmsOtp smsOtp = smsOtpService.findByMobileNumber(forgotPasswordRequest.getNoTelepon());
 
 		emailToken.setStatusEmailVerify(true);
 		smsOtp.setStatusOtp(true);
 
-		emailVerify.save(emailToken);
-		smsOtpRepository.save(smsOtp);
+		emailVerifyService.save(emailToken);
+		smsOtpService.save(smsOtp);
 
-		if (emailVerify.existsByMobileNumber(forgotPassword.getNoTelepon()))
+		if (emailVerifyService.existsByMobileNumber(forgotPasswordRequest.getNoTelepon()))
 		{
-			emailVerify.deleteByMobileNumber(forgotPassword.getNoTelepon());
+			emailVerifyService.deleteByMobileNumber(forgotPasswordRequest.getNoTelepon());
 		}
 
-		if (smsOtpRepository.existsByEmail(forgotPassword.getEmail()))
+		if (smsOtpService.existsByEmail(forgotPasswordRequest.getEmail()))
 		{
-			smsOtpRepository.deleteByMobileNumber(forgotPassword.getNoTelepon());
+			smsOtpService.deleteByMobileNumber(forgotPasswordRequest.getNoTelepon());
 		}
 
-		if (userRepository.existsByEmail(forgotPassword.getEmail())) {
-			ForgotPassword forgotPasswords = new ForgotPassword();
-			forgotPasswords.setEmail(forgotPassword.getEmail());
+		if (userService.existsByEmail(forgotPasswordRequest.getEmail())) {
+			ForgotPasswordRequest forgotPasswordsRequest = new ForgotPasswordRequest();
+			forgotPasswordsRequest.setEmail(forgotPasswordRequest.getEmail());
 
 			// email verify
 			EmailToken email = new EmailToken();
-			email.setEmail(forgotPassword.getEmail());
+			email.setEmail(forgotPasswordRequest.getEmail());
 			email.setCodeVerify(UUID.randomUUID().toString());
 			email.setStatusEmailVerify(true);
-			email.setMobileNumber(forgotPassword.getNoTelepon());
-			emailVerify.save(email);
+			email.setMobileNumber(forgotPasswordRequest.getNoTelepon());
+			emailVerifyService.save(email);
 
 			// email verify
 			SimpleMailMessage mailMessage = new SimpleMailMessage();
-			mailMessage.setTo(forgotPassword.getEmail());
+			mailMessage.setTo(forgotPasswordRequest.getEmail());
 			mailMessage.setSubject("Test test");
 			mailMessage.setFrom("setiawan.aanbudi@gmail.com");
 			mailMessage.setText("To confirm "+"https://project-danapprentech-3.herokuapp.com/api/auth/confirm-password/"+
@@ -737,16 +749,16 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 		} else {
 			return ResponseEntity.badRequest().body(new MessageResponse("Email not registered...!", "400"));
 		}
-		if (userRepository.existsByNoTelepon(forgotPassword.getNoTelepon())) {
+		if (userService.existsByNoTelepon(forgotPasswordRequest.getNoTelepon())) {
 			// number verify
 			SmsOtp otp = new SmsOtp();
-			otp.setMobileNumber(forgotPassword.getNoTelepon());
+			otp.setMobileNumber(forgotPasswordRequest.getNoTelepon());
 //		otp.setMobileNumber("+6285777488828");// dummy
 			otp.setCodeOtp(smsOtpService.createOtp());
 //		otp.setCodeOtp("0657"); // dummy
 			otp.setStatusOtp(true);
-			otp.setEmail(forgotPassword.getEmail());
-			smsOtpRepository.save(otp);
+			otp.setEmail(forgotPasswordRequest.getEmail());
+			smsOtpService.save(otp);
 //			smsOtpService.sendSMS(forgotPassword.getNoTelepon(), otp.getCodeOtp());
 			return ResponseEntity.ok(new MessageResponse("your otp " + otp.getCodeOtp(), "200"));
 		} else {
@@ -760,17 +772,17 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 
 	// email
 	@PutMapping("/change-password")
-	public ResponseEntity<?> test(@RequestBody ForgotPassword forgotPassword)
+	public ResponseEntity<?> test(@RequestBody ForgotPasswordRequest forgotPasswordRequest)
 	{
-		SmsOtp smsotps = smsOtpRepository.findByEmail(forgotPassword.getEmail());
-		EmailToken emailToken = emailVerify.findByEmail(forgotPassword.getEmail());
+		SmsOtp smsotps = smsOtpService.findByEmail(forgotPasswordRequest.getEmail());
+		EmailToken emailToken = emailVerifyService.findByEmail(forgotPasswordRequest.getEmail());
 
-		if (!forgotPassword.getNewPassword().equals(forgotPassword.getConfirmPassword()))
+		if (!forgotPasswordRequest.getNewPassword().equals(forgotPasswordRequest.getConfirmPassword()))
 		{
 			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : ERROR : Your Password doesnt match..","400"));
 		}
 
-		if (forgotPassword.getEmail() == null || forgotPassword.getEmail().trim().length() <= 0)
+		if (forgotPasswordRequest.getEmail() == null || forgotPasswordRequest.getEmail().trim().length() <= 0)
 		{
 			return ResponseEntity.badRequest().body(new MessageResponse("ERROR : Please provide email","400"));
 		}
@@ -783,19 +795,19 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 		if (emailToken.isStatusEmailVerify() && smsotps.isStatusOtp())
 		{
 
-			User user = userRepository.findByEmail(forgotPassword.getEmail());
-			user.setPassword(encoder.encode(forgotPassword.getNewPassword()));
+			User user = userService.findByEmail(forgotPasswordRequest.getEmail());
+			user.setPassword(encoder.encode(forgotPasswordRequest.getNewPassword()));
 			user.setStatus("200");
 			user.setMessage("Password Already updated");
 			user.setUpdatedDate(new Date());
 			user.setPinTransaksi(user.getPinTransaksi());
 			smsotps.setStatusOtp(false);
 			emailToken.setStatusEmailVerify(false);
-			emailVerify.save(emailToken);
-			smsOtpRepository.save(smsotps);
+			emailVerifyService.save(emailToken);
+			smsOtpService.save(smsotps);
 			//save to database
-			userRepository.save(user);
-			return ResponseEntity.ok(userRepository.save(user));
+			userService.save(user);
+			return ResponseEntity.ok(userService.save(user));
 		}else {
 			return ResponseEntity.badRequest().body(new MessageResponse("Email not registered...!","400"));
 		}
@@ -808,7 +820,7 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 	@DeleteMapping("/delete-user/{mobileNumber}")
 	public ResponseEntity<?> deleteUser(@PathVariable("mobileNumber") String mobileNumber)
 	{
-		User user = userRepository.findByNoTelepon(mobileNumber);
+		User user = userService.findByNoTelepon(mobileNumber);
 		List<Transaksi> transaksi = transaksiRepository.findByNomorTeleponUser(mobileNumber);
 
 		if (user == null)
@@ -819,13 +831,13 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 
 		if (transaksi == null)
 		{
-			userRepository.deleteByNoTelepon(mobileNumber);
+			userService.deleteByNoTelepon(mobileNumber);
 			return ResponseEntity.ok(new MessageResponse
 					("Your account has been deleted...!","200"));
 		}
 
 		transaksiRepository.deleteByNomorTeleponUser(mobileNumber);
-		userRepository.deleteByNoTelepon(mobileNumber);
+		userService.deleteByNoTelepon(mobileNumber);
 		return ResponseEntity.ok(new MessageResponse
 				("Your account has been deleted...!","200"));
 	}
@@ -834,7 +846,55 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 	public ResponseEntity<?> updateUser(@PathVariable("mobileNumber") String mobileNumber, @RequestBody
 										EditUser editUser)
 	{
-		User user = userRepository.findByNoTelepon(mobileNumber);
+		User user = userService.findByNoTelepon(mobileNumber);
+
+		if (!passwordEmailVal.EmailValidator(editUser.getEmail()))
+		{
+			logger.info("ERROR : Your email address is invalid....");
+			return ResponseEntity
+					.badRequest()
+					.body(new MessageResponse("ERROR : Your email address is invalid....",
+							"400"));
+		}
+
+		if (userService.existsByEmail(editUser.getEmail()))
+		{
+			logger.info("ERROR : Email is already in use!");
+			return ResponseEntity
+					.badRequest()
+					.body(new MessageResponse("ERROR : Email is already in use!",
+							"400"));
+		}
+
+		if (!passwordEmailVal.NumberOnlyValidator(editUser.getNoTelepon()))
+		{
+			logger.info("ERROR : Your phone number must be all numeric...");
+			return ResponseEntity
+					.badRequest()
+					.body(new MessageResponse("ERROR : Your phone number must be all numeric ...",
+							"400"));
+		}
+
+		if (!passwordEmailVal.LengthPhoneNumber(editUser.getNoTelepon()))
+		{
+			logger.info("ERROR : Length phone number must be less than 15 ...");
+			return ResponseEntity
+					.badRequest()
+					.body(new MessageResponse("ERROR : Your phone number must be less than 15 ...",
+							"400"));
+		}
+
+		if (userService.existsByNoTelepon(editUser.getNoTelepon()))
+		{
+			return ResponseEntity.badRequest().body(new MessageResponse
+					("ERROR : Phone Number has been used...!","400"));
+		}
+
+		if (userService.existsByEmail(editUser.getEmail()))
+		{
+			return ResponseEntity.badRequest().body(new MessageResponse
+					("ERROR : Email has been used...!","400"));
+		}
 
 		if (user == null)
 		{
@@ -847,18 +907,19 @@ public class AuthController<ACCOUNT_AUTH_ID, ACCOUNT_SID> {
 		user.setEmail(editUser.getEmail());
 		user.setMessage("Profile has been changed");
 		user.setStatus("200");
-		return ResponseEntity.ok(userRepository.save(user));
+		return ResponseEntity.ok(userService.save(user));
 	}
 
 	@GetMapping("/qa-get-otp/{mobileNumber}")
 	public ResponseEntity<?> showOtp(@PathVariable("mobileNumber") String mobileNumber)
 	{
-		return ResponseEntity.ok(smsOtpRepository.findByMobileNumber(mobileNumber));
+		return ResponseEntity.ok(smsOtpService.findByMobileNumber(mobileNumber));
 	}
 
 	@GetMapping("/qa-get-token/{email}")
 	public ResponseEntity<?> showToken(@PathVariable("email") String email)
 	{
-		return ResponseEntity.ok(emailVerify.findByEmail(email));
+		return ResponseEntity.ok(emailVerifyService.findByEmail(email));
 	}
+
 }

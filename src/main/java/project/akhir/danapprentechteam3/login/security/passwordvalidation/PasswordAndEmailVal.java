@@ -1,165 +1,20 @@
 package project.akhir.danapprentechteam3.login.security.passwordvalidation;
 
-import org.springframework.stereotype.Service;
-
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-@Service
-public class PasswordAndEmailVal
+public interface PasswordAndEmailVal
 {
-    private Pattern pattern;
-    private Matcher matcher;
-
-    // "^[0-9]+$"
-    private static final String PASSWORD_PATTERN_NUMBER     =
-            ".*\\d.*";
-    private static final String NUMBER_ONLY                 =
-            "\\+?([ -]?\\d+)+|\\(\\d+\\)([ -]\\d+)";
-    private static final String PASSWORD_PATTERN_LOWERCASE  =
-            ".*[a-z].*";
-    private static final String PASSWORD_PATTERN_UPPERCASE  =
-            ".*[A-Z].*";
-    private static final String PASSWORD_PATTERN_SYMBOL     =
-            ".*[@#$%!].*";
-    private static final String EMAIL_REGEX                 =
-            "^[\\w-\\+]+(\\.[\\w]+)*@[\\w-]+(\\.[\\w]+)*(\\.[a-z]{2,})$";
-    private static final String ALPHABET                    =
-            "[a-zA-Z\\s']+";
-    private static final String ALPHABET_REGEX              =
-            "^[0-9]{6}$";
-
-    public boolean PasswordValidatorLowercase(String password)
-    {
-        pattern = Pattern.compile(PASSWORD_PATTERN_LOWERCASE);
-        matcher = pattern.matcher(password);
-        return matcher.matches();
-    }
-
-    public boolean PasswordValidatorUpercase(String password)
-    {
-        pattern = Pattern.compile(PASSWORD_PATTERN_UPPERCASE);
-        matcher = pattern.matcher(password);
-        return matcher.matches();
-    }
-
-    public boolean PasswordValidatorNumber(String password){
-        pattern = Pattern.compile(PASSWORD_PATTERN_NUMBER);
-        matcher = pattern.matcher(password);
-        return matcher.matches();
-    }
-
-    public boolean PasswordValidatorSymbol(String password){
-        pattern = Pattern.compile(PASSWORD_PATTERN_SYMBOL);
-        matcher = pattern.matcher(password);
-        return matcher.matches();
-    }
-
-    public boolean confirmPassword(String password, String confirmPassword){
-        boolean status = false;
-        if (password.equals(confirmPassword))
-        {
-            status = true;
-        }
-        return status;
-    }
-
-    public boolean EmailValidator (String password)
-    {
-        pattern = Pattern.compile(EMAIL_REGEX);
-        matcher = pattern.matcher(password);
-        return matcher.matches();
-    }
-
-    public boolean NumberOnlyValidator (String number)
-    {
-        pattern = Pattern.compile(NUMBER_ONLY);
-        matcher = pattern.matcher(number);
-        return matcher.matches();
-    }
-
-    public boolean LengthandNumeric (Long namaUser){
-        pattern = Pattern.compile(ALPHABET_REGEX);
-        matcher = pattern.matcher(String.valueOf(namaUser));
-        return matcher.matches();
-    }
-
-    public boolean Alphabetic (String namaUser){
-        pattern = Pattern.compile(ALPHABET);
-        matcher = pattern.matcher(namaUser);
-        return matcher.matches();
-    }
-
-    public boolean LengthPhoneNumber (String number){
-        boolean status;
-        if (number.length() >= 16)
-        {
-            return status = false;
-        }
-            return status = true;
-    }
-
-    public boolean LengthPassword (String number)
-    {
-        boolean status;
-
-        if (number.length() > 7 && number.length() < 17)
-
-        {
-            return status = true;
-        }
-            return status = false;
-    }
-
-    public boolean LengthUsername (String username){
-        boolean status;
-        if (username.length() < 3){
-            return status = false;
-        }
-        return status = true;
-    }
-
-    public boolean LengthPin (Long pinTransaksi){
-        boolean status;
-
-        String pin = String.valueOf(pinTransaksi);
-        pattern = Pattern.compile(NUMBER_ONLY);
-        matcher = pattern.matcher(pin);
-        if (pin.length() == 6){
-            return status = true;
-        } else {
-            return status = false;
-        }
-
-    }
-
-    public boolean LengthPinNumeric (Long pinTransaksi)
-
-    {
-        boolean status;
-
-        String pin = String.valueOf(pinTransaksi);
-        pattern = Pattern.compile(NUMBER_ONLY);
-        matcher = pattern.matcher(pin);
-
-        if (matcher.matches())
-        {
-            status = true;
-        } else {
-            status = false;
-        }
-
-        return status = true;
-    }
-
-    public boolean PasswordValidatorSpace (String password){
-        if(password != null){
-            for(int i = 0; i < password.length(); i++){
-                if(Character.isWhitespace(password.charAt(i))){
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
+    boolean PasswordValidatorLowercase(String password);
+    boolean PasswordValidatorUpercase(String password);
+    boolean PasswordValidatorNumber(String password);
+    boolean PasswordValidatorSymbol(String password);
+    boolean confirmPassword(String password, String confirmPassword);
+    boolean EmailValidator (String password);
+    boolean NumberOnlyValidator (String number);
+    boolean LengthandNumeric (Long namaUser);
+    boolean Alphabetic (String namaUser);
+    boolean LengthPhoneNumber (String number);
+    boolean LengthPassword (String number);
+    boolean LengthUsername (String username);
+    boolean LengthPin (Long pinTransaksi);
+    boolean LengthPinNumeric (Long pinTransaksi);
+    boolean PasswordValidatorSpace (String password);
 }
